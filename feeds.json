@@ -1,0 +1,20 @@
+[
+  {
+    "id": "aws-compute",
+    "name": "AWS Compute Blog",
+    "url": "https://aws.amazon.com/blogs/compute/feed/",
+    "enabled": true
+  },
+  {
+    "id": "aws-architecture",
+    "name": "AWS Architecture Blog",
+    "url": "https://aws.amazon.com/blogs/architecture/feed/",
+    "enabled": true
+  },
+  {
+    "id": "cncf-blog",
+    "name": "CNCF Blog",
+    "url": "https://www.cncf.io/blog/feed/",
+    "enabled": true
+  }
+]
