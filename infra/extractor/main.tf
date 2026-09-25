@@ -1,14 +1,14 @@
 resource "aws_ecs_cluster" "main" {
-  name = "extractor-cluster"
+  name = "cloud-feed-pipeline-cluster"
 }
 
 resource "aws_cloudwatch_log_group" "ecs_logs" {
-  name              = "/ecs/extractor-task"
+  name              = "/ecs/cloud-feed-pipeline-extractor"
   retention_in_days = 7
 }
 
 resource "aws_security_group" "extractor_sg" {
-  name        = "extractor-task-egress-sg"
+  name        = "cloud-feed-pipeline-extractor-sg"
   description = "Deny all inbound; permit outbound web, DNS, and API"
   vpc_id      = var.vpc_id
 
@@ -46,7 +46,7 @@ resource "aws_security_group" "extractor_sg" {
 }
 
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "extractor-ecs-execution-role"
+  name = "cloud-feed-pipeline-ecs-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -65,7 +65,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_standard" {
 
 
 resource "aws_iam_role" "ecs_task_role" {
-  name = "extractor-ecs-task-role"
+  name = "cloud-feed-pipeline-ecs-task-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -78,7 +78,7 @@ resource "aws_iam_role" "ecs_task_role" {
 }
 
 resource "aws_iam_role_policy" "ecs_sns_publish" {
-  name = "extractor-sns-publish-policy"
+  name = "cloud-feed-pipeline-sns-publish-policy"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
@@ -92,7 +92,7 @@ resource "aws_iam_role_policy" "ecs_sns_publish" {
 }
 
 resource "aws_iam_role_policy" "ecs_s3_read" {
-  name = "extractor-s3-read-policy"
+  name = "cloud-feed-pipeline-s3-read-policy"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
@@ -106,7 +106,7 @@ resource "aws_iam_role_policy" "ecs_s3_read" {
 }
 
 resource "aws_ecs_task_definition" "extractor_task" {
-  family                   = "extractor-task"
+  family                   = "cloud-feed-pipeline-extractor"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
@@ -115,7 +115,7 @@ resource "aws_ecs_task_definition" "extractor_task" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
 
   container_definitions = jsonencode([{
-    name      = "extractor"
+    name      = "cloud-feed-pipeline-extractor"
     image     = "${var.ecr_repository_url}:latest"
     essential = true
     environment = [
@@ -134,14 +134,14 @@ resource "aws_ecs_task_definition" "extractor_task" {
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.ecs_logs.name
         "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "extractor"
+        "awslogs-stream-prefix" = "cloud-feed-pipeline-extractor"
       }
     }
   }])
 }
 
 resource "aws_iam_role" "eventbridge_ecs_role" {
-  name = "eventbridge-ecs-trigger-role"
+  name = "cloud-feed-pipeline-eventbridge-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -154,7 +154,7 @@ resource "aws_iam_role" "eventbridge_ecs_role" {
 }
 
 resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
-  name = "eventbridge-ecs-run-task-policy"
+  name = "cloud-feed-pipeline-eventbridge-policy"
   role = aws_iam_role.eventbridge_ecs_role.id
 
   policy = jsonencode({
@@ -166,8 +166,8 @@ resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
         Resource = aws_ecs_task_definition.extractor_task.arn
       },
       {
-        Effect   = "Allow"
-        Action   = ["iam:PassRole"]
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
         Resource = [
           aws_iam_role.ecs_execution_role.arn,
           aws_iam_role.ecs_task_role.arn
@@ -177,15 +177,15 @@ resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
   })
 }
 
-resource "aws_cloudwatch_event_rule" "even_days_trigger" {
-  name                = "even-days-extractor-schedule"
-  description         = "Triggers extractor container on even days at 02:16 UTC"
-  schedule_expression = "cron(16 2 2/2 * ? *)"
+resource "aws_cloudwatch_event_rule" "extractor_schedule" {
+  name                = "cloud-feed-pipeline-schedule"
+  description         = "Triggers extractor container on Tuesday and Thursday at 02:16 UTC"
+  schedule_expression = "cron(16 2 ? * TUE,THU *)"
 }
 
 resource "aws_cloudwatch_event_target" "ecs_scheduled_target" {
-  rule      = aws_cloudwatch_event_rule.even_days_trigger.name
-  target_id = "ExtractorTaskTarget"
+  rule      = aws_cloudwatch_event_rule.extractor_schedule.name
+  target_id = "cloud-feed-pipeline-ecs-target"
   arn       = aws_ecs_cluster.main.arn
   role_arn  = aws_iam_role.eventbridge_ecs_role.arn
 

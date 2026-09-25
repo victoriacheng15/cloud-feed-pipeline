@@ -1,14 +1,14 @@
 resource "aws_sns_topic" "extractor_events" {
-  name = "extractor-events-topic"
+  name = "cloud-feed-pipeline-topic"
 }
 
 resource "aws_sqs_queue" "dlq" {
-  name                      = "extractor-events-dlq"
+  name                      = "cloud-feed-pipeline-dlq"
   message_retention_seconds = 1209600 # 14-day retention
 }
 
 resource "aws_sqs_queue" "pipeline_queue" {
-  name                       = "extractor-events-queue"
+  name                       = "cloud-feed-pipeline-queue"
   visibility_timeout_seconds = 180 # 6x Lambda timeout (30s)
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
