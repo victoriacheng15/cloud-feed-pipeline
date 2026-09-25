@@ -106,23 +106,22 @@ jobs:
           tofu init -backend=false
           tofu validate
 
-  # Uncomment once Dockerfile is created
-  # container-build:
-  #   name: Container Build Verification
-  #   needs: changes
-  #   if: ${{ needs.changes.outputs.docker == 'true' }}
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v7
-  #
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v4
-  #
-  #     - name: Build container image
-  #       uses: docker/build-push-action@v7
-  #       with:
-  #         context: .
-  #         file: ./Dockerfile
-  #         push: false
-  #         tags: extractor:test
+  container-build:
+    name: Container Build Verification
+    needs: changes
+    if: ${{ needs.changes.outputs.docker == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build container image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: cloud-feed-pipeline:test
