@@ -16,7 +16,7 @@ The system processes requests and manages state through simplified operational p
 | **Idempotent Dispatch** | Verify uniqueness and publish rich embeds | SQS -> Lambda -> DynamoDB -> Discord |
 | **Continuous Delivery** | Deploy container images and infrastructure via OIDC | GitHub Actions -> ECR -> OpenTofu |
 
-```
+```text
            ┌──────────────┐
            │ EventBridge  │ (Cron: Tue, Thu 02:16 UTC)
            └──────────────┘

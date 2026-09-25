@@ -39,10 +39,12 @@ Measurements performed locally via Podman using multi-stage builds against ident
 ## 3. Engineering Trade-Offs
 
 ### Debian (slim)
+
 - **Strengths:** Maximum compatibility with Python ecosystem wheels (`manylinux` standard). Relies on `glibc`, the industry standard across enterprise Linux distributions. Zero risk of unexpected runtime discrepancies with network sockets, DNS resolution, or SSL negotiation.
 - **Trade-offs:** Base image footprint is larger (~45 MB compressed for base OS vs ~18 MB for Alpine).
 
 ### Alpine
+
 - **Strengths:** Meets the sub-60 MB target at **51.72 MB compressed**. Faster image pull times across networks and a 39% smaller uncompressed disk/memory footprint.
 - **Trade-offs:** Uses `musl libc`. While the current dependencies (`boto3`, `feedparser`, `requests`) provide pre-compiled `musllinux` wheels, future dependencies with native C extensions may occasionally require compilation tooling (`gcc`, `musl-dev`) during image builds.
 
@@ -53,6 +55,7 @@ Measurements performed locally via Podman using multi-stage builds against ident
 All commands can be executed via Podman or Docker.
 
 ### Building Variants
+
 ```bash
 # Build Debian slim variant
 podman build -t extractor:test -f docs/docker/Dockerfile.slim .
@@ -62,6 +65,7 @@ podman build -t extractor:alpine -f docs/docker/Dockerfile.alpine .
 ```
 
 ### Inspecting Sizes
+
 ```bash
 # Uncompressed footprint
 podman image inspect extractor:test --format '{{.Size}}' | awk '{printf "Slim Uncompressed: %.2f MB\n", $1/1024/1024}'
@@ -73,6 +77,7 @@ podman save extractor:alpine | gzip | wc -c | awk '{printf "Alpine Compressed EC
 ```
 
 ### Local Execution & Verification
+
 ```bash
 # Run container locally with fallback to local feeds.json
 podman run --rm extractor:test

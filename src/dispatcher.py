@@ -19,7 +19,12 @@ def get_table():
         table_name = os.environ.get("DYNAMODB_TABLE")
         if not table_name:
             raise ValueError("DYNAMODB_TABLE environment variable is not set")
-        dynamodb = boto3.resource("dynamodb")
+        endpoint_url = os.environ.get("AWS_ENDPOINT_URL")
+        dynamodb = (
+            boto3.resource("dynamodb", endpoint_url=endpoint_url)
+            if endpoint_url
+            else boto3.resource("dynamodb")
+        )
         _table = dynamodb.Table(table_name)
     return _table
 

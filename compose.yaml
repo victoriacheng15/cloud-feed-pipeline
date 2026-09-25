@@ -1,0 +1,56 @@
+services:
+  localstack:
+    image: localstack/localstack:4.4.0
+    container_name: cloud-feed-pipeline-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,sns,sqs,dynamodb
+      - AWS_DEFAULT_REGION=ca-central-1
+      - SQS_ENDPOINT_STRATEGY=path
+      - LOCALSTACK_HOST=localstack:4566
+    volumes:
+      - ./scripts:/etc/localstack/init/ready.d:ro,z
+      - ./feeds.json:/tmp/feeds.json:ro,z
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  dispatcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: cloud-feed-pipeline:dev
+    container_name: cloud-feed-pipeline-dispatcher
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=ca-central-1
+      - DYNAMODB_TABLE=cloud-feed-pipeline-articles
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-https://httpbin.org/post}
+      - SQS_QUEUE_NAME=cloud-feed-pipeline-queue
+    command: ["python", "-m", "src.consumer"]
+    restart: unless-stopped
+
+  extractor:
+    image: cloud-feed-pipeline:dev
+    container_name: cloud-feed-pipeline-extractor
+    depends_on:
+      localstack:
+        condition: service_healthy
+      dispatcher:
+        condition: service_started
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=ca-central-1
+      - CONFIG_BUCKET=cloud-feed-pipeline-config
+      - SNS_TOPIC_ARN=arn:aws:sns:ca-central-1:000000000000:cloud-feed-pipeline-topic
+    command: ["python", "-m", "src.extractor"]
