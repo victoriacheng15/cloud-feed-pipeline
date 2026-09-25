@@ -6,6 +6,12 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket = "cloud-feed-pipeline-tfstate"
+    key    = "state/terraform.tfstate"
+    region = "ca-central-1"
+  }
 }
 
 provider "aws" {

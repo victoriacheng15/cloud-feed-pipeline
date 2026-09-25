@@ -83,29 +83,28 @@ jobs:
           uv run pytest
 
 
-  # Uncomment once OpenTofu configuration files are added to infra/
-  # infra-validate:
-  #   name: OpenTofu Format & Validate
-  #   needs: changes
-  #   if: ${{ needs.changes.outputs.infra == 'true' }}
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v7
-  #
-  #     - name: Set up OpenTofu
-  #       uses: opentofu/setup-opentofu@v2
-  #       with:
-  #         tofu_version: 1.9.0
-  #
-  #     - name: Check OpenTofu formatting
-  #       run: tofu fmt -check -recursive infra/
-  #
-  #     - name: Validate Root and Modules
-  #       run: |
-  #         cd infra
-  #         tofu init -backend=false
-  #         tofu validate
+  infra-validate:
+    name: OpenTofu Format & Validate
+    needs: changes
+    if: ${{ needs.changes.outputs.infra == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+  
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.9.0
+  
+      - name: Check OpenTofu formatting
+        run: tofu fmt -check -recursive infra/
+  
+      - name: Validate Root and Modules
+        run: |
+          cd infra
+          tofu init -backend=false
+          tofu validate
 
   # Uncomment once Dockerfile is created
   # container-build:
