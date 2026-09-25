@@ -8,7 +8,7 @@ Technical architecture specification for the Cloud Feed Pipeline, detailing syst
 
 The pipeline follows an asynchronous, event-driven decoupled architecture:
 
-```
+```text
                   ┌───────────────────────────────┐
                   │          EventBridge          │
                   │   cron(16 2 ? * TUE,THU *)    │
@@ -76,16 +76,19 @@ The pipeline follows an asynchronous, event-driven decoupled architecture:
 ## 2. Ingestion & Extractor Subsystem
 
 ### Ephemeral Execution Model
+
 The extractor parses multiple RSS feeds concurrently. Instead of maintaining a persistent server or using Lambda (which risks execution timeouts on slow upstream feed hosts), the service runs as an on-demand ECS Fargate container:
+
 - **Scheduler:** EventBridge invokes the task on Tuesdays and Thursdays at 02:16 UTC.
 - **Feed Registry:** The task reads `feeds.json` from the S3 configuration bucket using the task IAM role.
 - **Concurrent Ingestion:** Feeds parse concurrently with per-host timeout boundaries to isolate slow or unresponsive servers.
 - **Container Footprint:** Built on Alpine Linux (51.7 MB compressed) with read-only root filesystems and dropped Linux kernel capabilities.
 
 ### Zero-NAT Gateway Egress Topology
+
 Running ECS containers in private subnets typically requires an AWS NAT Gateway, which incurs fixed hourly fees even when idle. To avoid this cost while securing the network perimeter:
 
-```
+```text
                       INTERNET
                          │
                          ▼
@@ -117,17 +120,22 @@ Running ECS containers in private subnets typically requires an AWS NAT Gateway,
 ## 3. Messaging, Buffering & Resilience
 
 ### Asynchronous Fan-Out
+
 The extractor publishes individual article events to an SNS topic. This provides architectural decoupling:
+
 - The extractor completes immediately after publishing without waiting for downstream processing.
 - Additional subscribers (such as archive storage or analytics) can attach to the topic without changes to the extractor.
 
 ### Backpressure & Queue Buffering
+
 The SNS topic delivers messages to an SQS queue:
+
 - **Dampening Spikes:** Feeds published simultaneously are buffered in SQS, preventing downstream Lambda invocations from exhausting concurrent execution limits or triggering Discord rate limits.
 - **Visibility Timeout:** Configured to 180 seconds, exactly 6x the Lambda 30-second timeout. This ensures in-flight batches have sufficient margin to complete without premature redelivery.
 
 ### Poison-Pill Quarantine & DLQ Flow
-```
+
+```text
 [Incoming SQS Message] ──> [Lambda Execution Attempt]
                                     │
                        ┌────────────┴────────────┐
@@ -153,9 +161,10 @@ The SNS topic delivers messages to an SQS queue:
 ## 4. Deduplication & Idempotent Dispatch
 
 ### Check-First Deduplication Pattern
+
 SQS provides at-least-once delivery guarantees, which can cause duplicate executions during retries or network partitions. The Lambda dispatcher guarantees exactly-once delivery semantics using a check-first pattern:
 
-```
+```text
 [SQS Message Received]
           │
           ▼
@@ -190,7 +199,9 @@ SQS provides at-least-once delivery guarantees, which can cause duplicate execut
 4. **Failure Safety:** If Discord returns a 429 (rate limit) or 5xx (server error), the hash is not written, ensuring SQS will safely redeliver the message on the next attempt.
 
 ### Partial Batch Failure Handling
+
 Lambda processes messages in batches of up to 10:
+
 - The event source mapping has `ReportBatchItemFailures` enabled.
 - If message 3 in a 10-message batch fails, Lambda reports only message 3's identifier in `batchItemFailures`.
 - Messages 1, 2, and 4 through 10 are deleted from the queue, preventing duplicate notifications.

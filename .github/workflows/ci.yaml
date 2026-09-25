@@ -17,6 +17,7 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       infra: ${{ steps.filter.outputs.infra }}
       docker: ${{ steps.filter.outputs.docker }}
+      markdown: ${{ steps.filter.outputs.markdown }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -38,6 +39,8 @@ jobs:
               - 'src/**'
               - 'pyproject.toml'
               - 'uv.lock'
+            markdown:
+              - '**/*.md'
 
   python-lint:
     name: Python Lint & Format
@@ -60,6 +63,18 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
+
+  markdown-lint:
+    name: Markdown Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.markdown == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run Markdown Lint
+        run: make md-lint
 
   python-test:
     name: Python Unit Tests

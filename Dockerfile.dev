@@ -1,0 +1,19 @@
+FROM python:3.12-alpine
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+COPY src/ ./src
+COPY feeds.json ./
+
+CMD ["python", "-m", "src.extractor"]
