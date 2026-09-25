@@ -1,0 +1,90 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'infra/**'
+      - 'Dockerfile'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    name: Build & Push ECR Container
+    runs-on: ubuntu-latest
+    outputs:
+      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ca-central-1' }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Compute short commit SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/cloud-feed-pipeline:latest
+            ${{ steps.login-ecr.outputs.registry }}/cloud-feed-pipeline:${{ steps.vars.outputs.short_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-infra:
+    name: Deploy Infrastructure
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ca-central-1' }}
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init & Apply
+        working-directory: infra
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION || 'ca-central-1' }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID || secrets.VPC_ID }}
+          TF_VAR_public_subnet_ids: ${{ vars.PUBLIC_SUBNET_IDS || secrets.PUBLIC_SUBNET_IDS }}
+          TF_VAR_ecr_repository_url: ${{ needs.build-and-push.outputs.ecr_registry }}/cloud-feed-pipeline
+          TF_VAR_discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          tofu init
+          tofu apply -auto-approve -input=false
