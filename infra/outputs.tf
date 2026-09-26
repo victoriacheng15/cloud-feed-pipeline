@@ -17,3 +17,9 @@ output "config_bucket_name" {
   description = "Name of the S3 bucket hosting feeds.json"
   value       = module.storage.config_bucket_name
 }
+
+output "alerts_topic_arn" {
+  description = "ARN of the SNS topic receiving operational SLO violation alerts"
+  value       = module.observability.alerts_topic_arn
+}
+
