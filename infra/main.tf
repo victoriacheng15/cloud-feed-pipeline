@@ -48,3 +48,12 @@ module "dispatcher" {
   dynamodb_table_arn  = module.storage.table_arn
   discord_webhook_url = var.discord_webhook_url
 }
+
+module "observability" {
+  source               = "./observability"
+  project_name         = var.project_name
+  dlq_name             = module.messaging.dlq_name
+  lambda_function_name = module.dispatcher.function_name
+  ecs_cluster_arn      = module.extractor.cluster_arn
+  ecs_cluster_name     = "${var.project_name}-cluster"
+}
