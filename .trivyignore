@@ -1,0 +1,14 @@
+# Trivy Ignore Rules
+
+# SNS topic encryption requires AWS KMS Customer Managed Keys (CMK), which incur base fees ($1/key/month).
+# Intentionally suppressed for cost optimization on serverless ingestion pipeline.
+AVD-AWS-0095
+
+# S3 customer managed KMS key requirement.
+# SSE-S3 (AES256) is explicitly enabled on the bucket at zero cost.
+AVD-AWS-0132
+
+# Unrestricted outbound egress (0.0.0.0/0).
+# The extractor is an RSS feed crawler requiring public internet access (ports 80, 443, 53)
+# to fetch dynamic external feeds and resolve DNS. Inbound ingress remains fully blocked.
+AVD-AWS-0104

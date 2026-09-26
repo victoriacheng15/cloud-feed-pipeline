@@ -5,11 +5,13 @@ resource "aws_sns_topic" "extractor_events" {
 resource "aws_sqs_queue" "dlq" {
   name                      = "${var.project_name}-dlq"
   message_retention_seconds = 1209600 # 14-day retention
+  sqs_managed_sse_enabled   = true
 }
 
 resource "aws_sqs_queue" "pipeline_queue" {
   name                       = "${var.project_name}-queue"
   visibility_timeout_seconds = 180 # 6x Lambda timeout (30s)
+  sqs_managed_sse_enabled    = true
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3

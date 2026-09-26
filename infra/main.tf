@@ -8,14 +8,24 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "serverless-ingestion-engine-tfstate"
-    key    = "state/terraform.tfstate"
-    region = "ca-central-1"
+    bucket         = "serverless-ingestion-engine-tfstate"
+    key            = "state/terraform.tfstate"
+    region         = "ca-central-1"
+    dynamodb_table = "serverless-ingestion-engine-tflocks"
   }
 }
 
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      ManagedBy   = "OpenTofu"
+      Repository  = "victoriacheng15/serverless-ingestion-engine"
+      Environment = "production"
+    }
+  }
 }
 
 module "messaging" {
@@ -55,5 +65,4 @@ module "observability" {
   dlq_name             = module.messaging.dlq_name
   lambda_function_name = module.dispatcher.function_name
   ecs_cluster_arn      = module.extractor.cluster_arn
-  ecs_cluster_name     = "${var.project_name}-cluster"
 }

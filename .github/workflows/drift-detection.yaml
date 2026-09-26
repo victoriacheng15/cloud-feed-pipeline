@@ -1,0 +1,62 @@
+name: Nightly Infrastructure Drift Detection
+
+on:
+  schedule:
+    # Run every night at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  detect-drift:
+    name: Detect AWS Infrastructure Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ca-central-1' }}
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init
+        working-directory: infra
+        run: tofu init
+
+      - name: Check for Out-of-Band Drift
+        working-directory: infra
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION || 'ca-central-1' }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID || secrets.VPC_ID }}
+          TF_VAR_public_subnet_ids: ${{ vars.PUBLIC_SUBNET_IDS || secrets.PUBLIC_SUBNET_IDS }}
+          TF_VAR_ecr_repository_url: ${{ vars.ECR_REPOSITORY_URL || 'serverless-ingestion-engine' }}
+          TF_VAR_discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          # Exit codes: 0 = No changes, 1 = Error, 2 = Drift detected
+          set +e
+          tofu plan -detailed-exitcode -no-color > drift_plan.txt
+          EXIT_CODE=$?
+          set -e
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "Infrastructure state matches code. Zero drift detected."
+            exit 0
+          elif [ $EXIT_CODE -eq 2 ]; then
+            echo "::error::Infrastructure drift detected! Unmanaged changes exist in AWS."
+            cat drift_plan.txt
+            exit 2
+          else
+            echo "::error::OpenTofu plan execution failed."
+            cat drift_plan.txt
+            exit $EXIT_CODE
+          fi
