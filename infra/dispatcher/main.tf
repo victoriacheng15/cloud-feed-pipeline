@@ -11,6 +11,11 @@ resource "aws_iam_role" "lambda_exec_role" {
   })
 }
 
+resource "aws_cloudwatch_log_group" "dispatcher_logs" {
+  name              = "/aws/lambda/${var.project_name}-dispatcher"
+  retention_in_days = 7
+}
+
 resource "aws_iam_role_policy" "lambda_policy" {
   name = "${var.project_name}-lambda-policy"
   role = aws_iam_role.lambda_exec_role.id
@@ -21,11 +26,13 @@ resource "aws_iam_role_policy" "lambda_policy" {
       {
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "arn:aws:logs:*:*:*"
+        Resource = [
+          aws_cloudwatch_log_group.dispatcher_logs.arn,
+          "${aws_cloudwatch_log_group.dispatcher_logs.arn}:*"
+        ]
       },
       {
         Effect = "Allow"

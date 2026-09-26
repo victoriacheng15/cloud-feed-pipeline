@@ -34,6 +34,7 @@ jobs:
               - 'uv.lock'
             infra:
               - 'infra/**'
+              - '.tflint.hcl'
             docker:
               - 'Dockerfile'
               - 'src/**'
@@ -42,8 +43,8 @@ jobs:
             markdown:
               - '**/*.md'
 
-  python-lint:
-    name: Python Lint & Format
+  python:
+    name: Python Quality & Tests
     needs: changes
     if: ${{ needs.changes.outputs.python == 'true' }}
     runs-on: ubuntu-latest
@@ -64,7 +65,10 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
-  markdown-lint:
+      - name: Run Unit Tests
+        run: uv run pytest
+
+  markdown:
     name: Markdown Lint
     needs: changes
     if: ${{ needs.changes.outputs.markdown == 'true' }}
@@ -76,53 +80,49 @@ jobs:
       - name: Run Markdown Lint
         run: make md-lint
 
-  python-test:
-    name: Python Unit Tests
-    needs: changes
-    if: ${{ needs.changes.outputs.python == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Run Unit Tests
-        run: |
-          uv run pytest
-
-
-  infra-validate:
-    name: OpenTofu Format & Validate
+  infra-security:
+    name: Infrastructure & Policy Scanning
     needs: changes
     if: ${{ needs.changes.outputs.infra == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-  
+
       - name: Set up OpenTofu
         uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: 1.9.0
-  
+
       - name: Check OpenTofu formatting
         run: tofu fmt -check -recursive infra/
-  
+
       - name: Validate Root and Modules
         run: |
           cd infra
           tofu init -backend=false
           tofu validate
 
-  container-build:
-    name: Container Build Verification
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: v0.64.0
+
+      - name: Init and Run TFLint
+        run: |
+          tflint --init
+          tflint --chdir=infra
+
+      - name: Scan IaC with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'infra'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  container-security:
+    name: Container Build & Vulnerability Scan
     needs: changes
     if: ${{ needs.changes.outputs.docker == 'true' }}
     runs-on: ubuntu-latest
@@ -138,5 +138,13 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: false
+          load: true
           tags: serverless-ingestion-engine:test
+
+      - name: Scan Container Image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 'serverless-ingestion-engine:test'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true

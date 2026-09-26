@@ -17,8 +17,3 @@ variable "ecs_cluster_arn" {
   type        = string
   description = "ARN of the ECS cluster executing scheduled extraction tasks"
 }
-
-variable "ecs_cluster_name" {
-  type        = string
-  description = "Name of the ECS cluster executing scheduled extraction tasks"
-}
