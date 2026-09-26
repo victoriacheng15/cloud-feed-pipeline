@@ -1,6 +1,6 @@
-# Pipeline Documentation
+# Engine Documentation
 
-This directory contains technical specifications, architectural guides, and operational benchmarks for the Cloud Feed Pipeline.
+This directory contains technical specifications, architectural guides, and operational benchmarks for the Serverless Ingestion Engine.
 
 ---
 

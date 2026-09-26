@@ -1,12 +1,12 @@
-# Cloud Feed Pipeline Architecture
+# Serverless Ingestion Engine Architecture
 
-Technical architecture specification for the Cloud Feed Pipeline, detailing system topology, component interactions, failure resilience, and network design.
+Technical architecture specification for the Serverless Ingestion Engine, detailing system topology, component interactions, failure resilience, observability loops, and network design.
 
 ---
 
 ## 1. System Blueprint
 
-The pipeline follows an asynchronous, event-driven decoupled architecture:
+The engine follows an asynchronous, event-driven decoupled architecture with codified observability:
 
 ```text
                   ┌───────────────────────────────┐
@@ -21,54 +21,67 @@ The pipeline follows an asynchronous, event-driven decoupled architecture:
 │             (ca-central-1 Public Subnet, Egress-Only)           │
 │                                                                 │
 │   ┌───────────────┐     ┌────────────────┐     ┌────────────┐   │
-│   │ S3 feeds.json │ ──> │ RSS Extractor  │ ──> │ SNS Client │   │
+│   │ S3 feeds.json │ ──> │ Feed Extractor │ ──> │ SNS Client │   │
 │   │   Registry    │     │  (Concurrent)  │     │ (Publish)  │   │
 │   └───────────────┘     └────────────────┘     └─────┬──────┘   │
-└──────────────────────────────────────────────────────┼──────────┘
-                                                       │
-                                                       │ Publish article JSON
-                                                       ▼
-                                          ┌────────────────────────┐
-                                          │       SNS Topic        │
-                                          │     (Feed Events)      │
-                                          └────────────┬───────────┘
-                                                       │
-                                                       │ Fan-Out Subscription
-                                                       ▼
-                                          ┌────────────────────────┐
-                                          │       SQS Queue        │
-                                          │    (Pipeline Queue)    │
-                                          └────┬──────────────┬────┘
-                                               │              │
-                    Batches of up to 10 items  │              │ 3 failed retries
-                 with ReportBatchItemFailures  │              ▼
-                                               │     ┌─────────────────┐
-                                               │     │  Dead-Letter Q  │
-                                               │     │ (14-d retention)│
-                                               │     └─────────────────┘
-                                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       Lambda Dispatcher                         │
-│                       (Python 3.12, 30s timeout)                │
-│                                                                 │
+└───────────────────────────────┬──────────────────────┼──────────┘
+                                │                      │
+                exitCode != 0   │                      │ Publish article JSON
+               (EventBridge)    │                      ▼
+                                │         ┌────────────────────────┐
+                                │         │       SNS Topic        │
+                                │         │     (Feed Events)      │
+                                │         └────────────┬───────────┘
+                                │                      │
+                                │                      │ Fan-Out Subscription
+                                │                      ▼
+                                │         ┌────────────────────────┐
+                                │         │       SQS Queue        │
+                                │         │    (Pipeline Queue)    │
+                                │         └────┬──────────────┬────┘
+                                │              │              │
+     Batches of up to 10 items  │              │              │ 3 failed retries
+  with ReportBatchItemFailures  │              │              ▼
+                                │              │     ┌─────────────────┐
+                                │              │     │  Dead-Letter Q  │
+                                │              │     │ (14-d retention)│
+                                │              │     └────────┬────────┘
+                                │              │              │
+                                │              ▼              │ DLQ > 0
+┌───────────────────────────────┼─────────────────────────────┼───┐
+│                               │ Lambda Dispatcher           │   │
+│                               │ (Python 3.12, 30s timeout)  │   │
+│                               ▼                             ▼   │
 │   ┌─────────────────────────────────────────────────────────┐   │
 │   │ For each SQS message:                                   │   │
 │   │                                                         │   │
 │   │ 1. Compute SHA-256 hash of article URL                  │   │
 │   │ 2. DynamoDB GetItem(article_hash)                       │   │
 │   │    ├── Exists: Discard (duplicate, return success)      │   │
-│   │    └── New: Format Discord rich embed                   │   │
-│   │ 3. HTTP POST to Discord Webhook                         │   │
+│   │    └── New: Format rich notification payload            │   │
+│   │ 3. HTTP POST to Webhook Endpoint                        │   │
 │   │    ├── Success (2xx/204): DynamoDB PutItem(article_hash)│   │
 │   │    └── Failure (4xx/5xx): ReportBatchItemFailures       │   │
-│   └─────────────────────────────────────────────────────────┘   │
-└───────────────────────┬─────────────────────────┬───────────────┘
-                        │                         │
-     Check / Commit     ▼                         ▼ Deliver Embed
-  ┌───────────────────────────┐         ┌─────────────────────────┐
-  │      DynamoDB Table       │         │   Discord Webhook API   │
-  │   (Deduplication Store)   │         │   (Rich Embed Post)     │
-  └───────────────────────────┘         └─────────────────────────┘
+│   └───────────────────────────┬─────────────────────────────┘   │
+└───────────────────────┬───────┼─────────────────┬───────────────┘
+                        │       │ Errors > 0      │
+     Check / Commit     │       │ p99 > 45s       │
+  ┌─────────────────────┴─────┐ │                 ▼ Deliver Payload
+  │      DynamoDB Table       │ │      ┌─────────────────────────┐
+  │   (Deduplication Store)   │ │      │   Discord Webhook API   │
+  └───────────────────────────┘ │      │   (Rich Embed Post)     │
+                                │      └─────────────────────────┘
+                                ▼
+            ┌────────────────────────────────────────┐
+            │   CloudWatch Alarms & EventBridge      │
+            │   (Codified SLI / SLO Monitoring)      │
+            └───────────────────┬────────────────────┘
+                                │ Trigger Notification
+                                ▼
+            ┌────────────────────────────────────────┐
+            │         SNS Ops Alerts Topic           │
+            │         (Email / PagerDuty)            │
+            └────────────────────────────────────────┘
 ```
 
 ---
@@ -218,6 +231,7 @@ Infrastructure is managed with OpenTofu in modular components:
 | `infra/messaging/` | SNS Topic, SQS Queue, SQS DLQ | Decoupled buffering and routing |
 | `infra/extractor/` | ECS Cluster, Task Definition, Security Group, EventBridge | Ingestion compute and scheduling |
 | `infra/dispatcher/` | Lambda Function, SQS Event Mapping, IAM Execution Role | Processing and delivery |
+| `infra/observability/` | CloudWatch Metric Alarms, EventBridge Rule, SNS Alert Topic | SLI/SLO monitoring and alerting |
 
-- **Remote Backend:** Root `infra/main.tf` stores state remotely in an S3 backend in `ca-central-1`.
+- **Remote Backend & State Locking:** Root `infra/main.tf` stores state remotely in an S3 backend in `ca-central-1` with DynamoDB distributed state locking to prevent concurrent deployment race conditions.
 - **CI/CD Integration:** Merges to `main` authenticate via AWS OIDC federation, publish container images to Amazon ECR, and execute `tofu apply -auto-approve` without long-lived credentials.
