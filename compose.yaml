@@ -10,7 +10,7 @@ services:
       - SQS_ENDPOINT_STRATEGY=path
       - LOCALSTACK_HOST=localstack:4566
     volumes:
-      - ./scripts:/etc/localstack/init/ready.d:ro,z
+      - ./scripts/01-init.sh:/etc/localstack/init/ready.d/01-init.sh:ro,z
       - ./feeds.json:/tmp/feeds.json:ro,z
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]

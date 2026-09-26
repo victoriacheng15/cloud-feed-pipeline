@@ -16,41 +16,7 @@ The system processes requests and manages state through simplified operational p
 | **Idempotent Dispatch** | Verify uniqueness and publish rich embeds | SQS -> Lambda -> DynamoDB -> Discord |
 | **Continuous Delivery** | Deploy container images and infrastructure via OIDC | GitHub Actions -> ECR -> OpenTofu |
 
-```text
-           ┌──────────────┐
-           │ EventBridge  │ (Cron: Tue, Thu 02:16 UTC)
-           └──────────────┘
-                  │
-                  │ (Runs Fargate task via ecs:RunTask)
-                  ▼
-          ┌──────────────┐             ┌──────────────┐
-          │ ECS Extractor│ <────────── │  S3 Config   │ (feeds.json)
-          └──────────────┘             └──────────────┘
-                  │
-                  │ (Publishes article JSON events)
-                  ▼
-          ┌──────────────┐
-          │  SNS Topic   │ (Feed Events)
-          └──────────────┘
-                  │
-                  │ (Fans out to queue subscription)
-                  ▼
-          ┌──────────────┐             ┌──────────────┐
-          │  SQS Queue   │ ──────────> │     DLQ      │ (After 3 retries, 14d retention)
-          └──────────────┘             └──────────────┘
-                  │
-                  │ (Batches 10 items, ReportBatchItemFailures)
-                  ▼
-          ┌──────────────┐
-          │Lambda Dispatch│ (Python 3.12, 30s timeout)
-          └──────────────┘
-            │          │
- (Check /   │          │ (Delivers rich embed payload)
- Commit)    ▼          ▼
-    ┌────────────┐   ┌─────────────┐
-    │  DynamoDB  │   │   Discord   │ (Webhook API)
-    └────────────┘   └─────────────┘
-```
+![Cloud Feed Pipeline Architecture](architecture.png)
 
 ## Tech Stack
 
@@ -77,6 +43,24 @@ The system processes requests and manages state through simplified operational p
 - [Cloud Architecture](docs/architecture.md)
 - [Docker Architecture & Benchmarks](docs/docker/README.md)
 
+## Local Development
+
+Test the full event-driven pipeline locally using Podman Compose and LocalStack (emulating S3, SNS, SQS, and DynamoDB offline):
+
+```bash
+# Start the stack (boots LocalStack, provisions resources, starts dispatcher)
+make compose-up
+
+# Trigger an extraction run in a separate terminal
+podman compose run --rm extractor
+
+# Inspect dispatcher logs to verify ingestion and deduplication
+podman logs -f cloud-feed-pipeline-dispatcher
+
+# Tear down the stack
+make compose-down
+```
+
 ## Quality Verification & Linting
 
 Run automated unit tests, verification scripts, formatters, and code quality linters:
@@ -84,6 +68,7 @@ Run automated unit tests, verification scripts, formatters, and code quality lin
 ```bash
 make lint           # Run ruff check and format inspection
 make test           # Run all unit tests with pytest (20/20 passed)
+make md-lint        # Lint markdown documentation files
 make tofu-fmt       # Check OpenTofu formatting across all modules
 make tofu-validate  # Validate root and sub-module OpenTofu configurations
 ```
