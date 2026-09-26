@@ -1,7 +1,7 @@
 services:
   localstack:
     image: localstack/localstack:4.4.0
-    container_name: cloud-feed-pipeline-localstack
+    container_name: serverless-ingestion-engine-localstack
     ports:
       - "4566:4566"
     environment:
@@ -22,8 +22,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    image: cloud-feed-pipeline:dev
-    container_name: cloud-feed-pipeline-dispatcher
+    image: serverless-ingestion-engine:dev
+    container_name: serverless-ingestion-engine-dispatcher
     depends_on:
       localstack:
         condition: service_healthy
@@ -32,15 +32,15 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=ca-central-1
-      - DYNAMODB_TABLE=cloud-feed-pipeline-articles
+      - DYNAMODB_TABLE=serverless-ingestion-engine
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-https://httpbin.org/post}
-      - SQS_QUEUE_NAME=cloud-feed-pipeline-queue
+      - SQS_QUEUE_NAME=serverless-ingestion-engine-queue
     command: ["python", "-m", "src.consumer"]
     restart: unless-stopped
 
   extractor:
-    image: cloud-feed-pipeline:dev
-    container_name: cloud-feed-pipeline-extractor
+    image: serverless-ingestion-engine:dev
+    container_name: serverless-ingestion-engine-extractor
     depends_on:
       localstack:
         condition: service_healthy
@@ -51,6 +51,6 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=ca-central-1
-      - CONFIG_BUCKET=cloud-feed-pipeline-config
-      - SNS_TOPIC_ARN=arn:aws:sns:ca-central-1:000000000000:cloud-feed-pipeline-topic
+      - CONFIG_BUCKET=serverless-ingestion-engine-feeds
+      - SNS_TOPIC_ARN=arn:aws:sns:ca-central-1:000000000000:serverless-ingestion-engine-topic
     command: ["python", "-m", "src.extractor"]

@@ -139,4 +139,4 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: cloud-feed-pipeline:test
+          tags: serverless-ingestion-engine:test
