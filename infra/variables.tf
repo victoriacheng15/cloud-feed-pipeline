@@ -4,6 +4,12 @@ variable "aws_region" {
   description = "Target AWS region"
 }
 
+variable "project_name" {
+  type        = string
+  default     = "serverless-ingestion-engine"
+  description = "Project name used as a common prefix for resource identifiers"
+}
+
 variable "vpc_id" {
   type        = string
   description = "Target VPC ID where subnets reside"

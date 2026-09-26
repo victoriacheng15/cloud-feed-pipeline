@@ -1,5 +1,5 @@
 resource "aws_iam_role" "lambda_exec_role" {
-  name = "cloud-feed-pipeline-lambda-exec-role"
+  name = "${var.project_name}-lambda-exec-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -12,7 +12,7 @@ resource "aws_iam_role" "lambda_exec_role" {
 }
 
 resource "aws_iam_role_policy" "lambda_policy" {
-  name = "cloud-feed-pipeline-lambda-policy"
+  name = "${var.project_name}-lambda-policy"
   role = aws_iam_role.lambda_exec_role.id
 
   policy = jsonencode({
@@ -55,7 +55,7 @@ data "archive_file" "lambda_zip" {
 }
 
 resource "aws_lambda_function" "dispatcher" {
-  function_name    = "cloud-feed-pipeline-dispatcher"
+  function_name    = "${var.project_name}-dispatcher"
   role             = aws_iam_role.lambda_exec_role.arn
   handler          = "dispatcher.lambda_handler"
   runtime          = "python3.12"

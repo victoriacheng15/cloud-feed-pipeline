@@ -1,14 +1,14 @@
 resource "aws_ecs_cluster" "main" {
-  name = "cloud-feed-pipeline-cluster"
+  name = "${var.project_name}-cluster"
 }
 
 resource "aws_cloudwatch_log_group" "ecs_logs" {
-  name              = "/ecs/cloud-feed-pipeline-extractor"
+  name              = "/ecs/${var.project_name}-extractor"
   retention_in_days = 7
 }
 
 resource "aws_security_group" "extractor_sg" {
-  name        = "cloud-feed-pipeline-extractor-sg"
+  name        = "${var.project_name}-extractor-sg"
   description = "Deny all inbound; permit outbound web, DNS, and API"
   vpc_id      = var.vpc_id
 
@@ -46,7 +46,7 @@ resource "aws_security_group" "extractor_sg" {
 }
 
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "cloud-feed-pipeline-ecs-execution-role"
+  name = "${var.project_name}-ecs-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -65,7 +65,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_standard" {
 
 
 resource "aws_iam_role" "ecs_task_role" {
-  name = "cloud-feed-pipeline-ecs-task-role"
+  name = "${var.project_name}-ecs-task-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -78,7 +78,7 @@ resource "aws_iam_role" "ecs_task_role" {
 }
 
 resource "aws_iam_role_policy" "ecs_sns_publish" {
-  name = "cloud-feed-pipeline-sns-publish-policy"
+  name = "${var.project_name}-sns-publish-policy"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
@@ -92,7 +92,7 @@ resource "aws_iam_role_policy" "ecs_sns_publish" {
 }
 
 resource "aws_iam_role_policy" "ecs_s3_read" {
-  name = "cloud-feed-pipeline-s3-read-policy"
+  name = "${var.project_name}-s3-read-policy"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
@@ -106,7 +106,7 @@ resource "aws_iam_role_policy" "ecs_s3_read" {
 }
 
 resource "aws_ecs_task_definition" "extractor_task" {
-  family                   = "cloud-feed-pipeline-extractor"
+  family                   = "${var.project_name}-extractor"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
@@ -115,7 +115,7 @@ resource "aws_ecs_task_definition" "extractor_task" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
 
   container_definitions = jsonencode([{
-    name      = "cloud-feed-pipeline-extractor"
+    name      = "${var.project_name}-extractor"
     image     = "${var.ecr_repository_url}:latest"
     essential = true
     environment = [
@@ -134,14 +134,14 @@ resource "aws_ecs_task_definition" "extractor_task" {
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.ecs_logs.name
         "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "cloud-feed-pipeline-extractor"
+        "awslogs-stream-prefix" = "${var.project_name}-extractor"
       }
     }
   }])
 }
 
 resource "aws_iam_role" "eventbridge_ecs_role" {
-  name = "cloud-feed-pipeline-eventbridge-role"
+  name = "${var.project_name}-eventbridge-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -154,7 +154,7 @@ resource "aws_iam_role" "eventbridge_ecs_role" {
 }
 
 resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
-  name = "cloud-feed-pipeline-eventbridge-policy"
+  name = "${var.project_name}-eventbridge-policy"
   role = aws_iam_role.eventbridge_ecs_role.id
 
   policy = jsonencode({
@@ -178,14 +178,14 @@ resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
 }
 
 resource "aws_cloudwatch_event_rule" "extractor_schedule" {
-  name                = "cloud-feed-pipeline-schedule"
+  name                = "${var.project_name}-schedule"
   description         = "Triggers extractor container on Tuesday and Thursday at 02:16 UTC"
   schedule_expression = "cron(16 2 ? * TUE,THU *)"
 }
 
 resource "aws_cloudwatch_event_target" "ecs_scheduled_target" {
   rule      = aws_cloudwatch_event_rule.extractor_schedule.name
-  target_id = "cloud-feed-pipeline-ecs-target"
+  target_id = "${var.project_name}-ecs-target"
   arn       = aws_ecs_cluster.main.arn
   role_arn  = aws_iam_role.eventbridge_ecs_role.arn
 

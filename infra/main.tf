@@ -8,7 +8,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "cloud-feed-pipeline-tfstate"
+    bucket = "serverless-ingestion-engine-tfstate"
     key    = "state/terraform.tfstate"
     region = "ca-central-1"
   }
@@ -19,15 +19,18 @@ provider "aws" {
 }
 
 module "messaging" {
-  source = "./messaging"
+  source       = "./messaging"
+  project_name = var.project_name
 }
 
 module "storage" {
-  source = "./storage"
+  source       = "./storage"
+  project_name = var.project_name
 }
 
 module "extractor" {
   source             = "./extractor"
+  project_name       = var.project_name
   aws_region         = var.aws_region
   vpc_id             = var.vpc_id
   public_subnet_ids  = var.public_subnet_ids
@@ -39,6 +42,7 @@ module "extractor" {
 
 module "dispatcher" {
   source              = "./dispatcher"
+  project_name        = var.project_name
   queue_arn           = module.messaging.queue_arn
   dynamodb_table_name = module.storage.table_name
   dynamodb_table_arn  = module.storage.table_arn
