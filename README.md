@@ -69,10 +69,19 @@ make compose-up
 podman compose run --rm extractor
 
 # Inspect dispatcher logs to verify ingestion and deduplication
-podman logs -f cloud-feed-pipeline-dispatcher
+podman logs -f serverless-ingestion-engine-dispatcher
 
 # Tear down the stack
 make compose-down
+```
+
+## Production Smoke Testing & Ad-Hoc Execution
+
+Validate network boundaries and trigger on-demand extraction runs directly against AWS:
+
+```bash
+./scripts/trigger_ingestion.sh --dry-run  # Verify VPC, subnets, and cluster without launching compute
+./scripts/trigger_ingestion.sh            # Trigger ephemeral Fargate run and stream live container logs
 ```
 
 ## Quality Verification & Linting
