@@ -95,3 +95,7 @@ make md-lint        # Lint markdown documentation files
 make tofu-fmt       # Check OpenTofu formatting across all modules
 make tofu-validate  # Validate root and sub-module OpenTofu configurations
 ```
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` for details.
