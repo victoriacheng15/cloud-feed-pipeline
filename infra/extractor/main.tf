@@ -84,8 +84,11 @@ resource "aws_iam_role_policy" "ecs_sns_publish" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["sns:Publish"]
+      Effect = "Allow"
+      Action = [
+        "sns:Publish",
+        "sns:GetTopicAttributes"
+      ]
       Resource = var.sns_topic_arn
     }]
   })
