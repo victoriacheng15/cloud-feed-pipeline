@@ -92,7 +92,7 @@ The engine follows an asynchronous, event-driven decoupled architecture with cod
 
 The extractor parses multiple RSS feeds concurrently. Instead of maintaining a persistent server or using Lambda (which risks execution timeouts on slow upstream feed hosts), the service runs as an on-demand ECS Fargate container:
 
-- **Scheduler:** EventBridge invokes the task on Tuesdays and Thursdays at 02:16 UTC.
+- **Scheduler & On-Demand Execution:** EventBridge invokes the task on Tuesdays and Thursdays at 02:16 UTC, with manual ad-hoc runs and pre-flight network validation supported via `scripts/trigger_ingestion.sh`.
 - **Feed Registry:** The task reads `feeds.json` from the S3 configuration bucket using the task IAM role.
 - **Concurrent Ingestion:** Feeds parse concurrently with per-host timeout boundaries to isolate slow or unresponsive servers.
 - **Container Footprint:** Built on Alpine Linux (51.7 MB compressed) with read-only root filesystems and dropped Linux kernel capabilities.
