@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import urllib.request
+from datetime import UTC, datetime
 
 import boto3
 
@@ -30,11 +31,23 @@ def get_table():
 
 
 def dispatch_to_discord(
-    article: dict, url: str, webhook_url: str | None = None
+    article: dict,
+    url: str,
+    webhook_url: str | None = None,
+    index: int | None = None,
+    total: int | None = None,
 ) -> None:
     target_url = webhook_url or os.environ.get("DISCORD_WEBHOOK_URL")
     if not target_url:
         raise ValueError("DISCORD_WEBHOOK_URL environment variable is not set")
+
+    today_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    if index is not None and total is not None:
+        footer_text = f"{today_str} - Post {index} of {total}"
+    elif index is not None:
+        footer_text = f"{today_str} - Post {index}"
+    else:
+        footer_text = f"{today_str} - Post"
 
     embed = {
         "embeds": [
@@ -50,7 +63,7 @@ def dispatch_to_discord(
                         "inline": True,
                     }
                 ],
-                "footer": {"text": "Cloud Pipeline Bot | Idempotent Dispatch"},
+                "footer": {"text": footer_text},
             }
         ]
     }
@@ -69,7 +82,12 @@ def dispatch_to_discord(
         logger.info("Discord returned status code: %d", response.status)
 
 
-def process_record(record: dict, table=None) -> None:
+def process_record(
+    record: dict,
+    table=None,
+    index: int | None = None,
+    total: int | None = None,
+) -> None:
     body = record.get("body", "{}")
     parsed_body = json.loads(body) if isinstance(body, str) else body
 
@@ -96,7 +114,7 @@ def process_record(record: dict, table=None) -> None:
         return
 
     # Step 2: Format & Send Discord Webhook Payload
-    dispatch_to_discord(article, url)
+    dispatch_to_discord(article, url, index=index, total=total)
 
     # Step 3: Record Dispatched Hash on Success
     active_table.put_item(
@@ -114,10 +132,11 @@ def lambda_handler(event: dict, context=None) -> dict:
     records = event.get("Records", [])
     logger.info("Processing event batch containing %d records", len(records))
     batch_item_failures = []
+    total = len(records)
 
-    for record in records:
+    for index, record in enumerate(records, 1):
         try:
-            process_record(record)
+            process_record(record, index=index, total=total)
         except Exception:
             message_id = record.get("messageId", "unknown")
             logger.exception(
