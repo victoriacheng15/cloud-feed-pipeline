@@ -86,6 +86,22 @@ def test_dispatch_to_discord(
         payload = json.loads(req_arg.data.decode("utf-8"))
         assert payload["embeds"][0]["url"] == url
         assert payload["embeds"][0]["title"] == article["title"]
+        assert " - Post" in payload["embeds"][0]["footer"]["text"]
+
+
+def test_dispatch_to_discord_footer_with_index(monkeypatch):
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/test")
+    mock_resp = MagicMock()
+    mock_resp.status = 204
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = False
+
+    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+        dispatch_to_discord({"title": "Test"}, "https://example.com", index=2, total=5)
+        req_arg = mock_urlopen.call_args[0][0]
+        payload = json.loads(req_arg.data.decode("utf-8"))
+        footer_text = payload["embeds"][0]["footer"]["text"]
+        assert "Post 2 of 5" in footer_text
 
 
 @pytest.mark.parametrize(
@@ -237,7 +253,7 @@ def test_process_record_dispatch_failure_does_not_save_to_dynamo():
     ],
 )
 def test_lambda_handler(records, failing_ids, expected_failures):
-    def fake_process_record(record):
+    def fake_process_record(record, *args, **kwargs):
         if record.get("messageId") in failing_ids:
             raise RuntimeError("Processing failed")
 
