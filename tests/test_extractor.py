@@ -109,6 +109,7 @@ def test_load_feeds_s3(monkeypatch, bucket_env, s3_feeds, want_s3_call):
             {
                 "id": "valid-feed",
                 "name": "Cloud Blog",
+                "provider": "CloudProvider",
                 "url": "https://example.com/feed",
             },
             SAMPLE_RSS_XML,
@@ -172,3 +173,4 @@ def test_process_feed(
         assert articles[0]["title"] == "Building Serverless Pipelines"
         assert articles[0]["url"] == "https://example.com/blog/serverless-pipelines"
         assert articles[0]["feed"] == "Cloud Blog"
+        assert articles[0]["provider"] == "CloudProvider"

@@ -107,6 +107,7 @@ def process_feed(feed: dict) -> list[dict]:
             )
             return []
 
+        provider = feed.get("provider")
         articles = []
         for entry in parsed.entries:
             title = getattr(entry, "title", "Untitled")
@@ -114,14 +115,15 @@ def process_feed(feed: dict) -> list[dict]:
             summary = getattr(entry, "summary", "")[:200]
 
             if title and link:
-                articles.append(
-                    {
-                        "feed": name,
-                        "title": title,
-                        "url": link,
-                        "summary": summary,
-                    }
-                )
+                article = {
+                    "feed": name,
+                    "title": title,
+                    "url": link,
+                    "summary": summary,
+                }
+                if provider:
+                    article["provider"] = provider
+                articles.append(article)
 
         logger.info("Discovered %d articles in [%s]", len(articles), name)
         return articles

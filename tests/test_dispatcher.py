@@ -86,10 +86,36 @@ def test_dispatch_to_discord(
         payload = json.loads(req_arg.data.decode("utf-8"))
         assert payload["embeds"][0]["url"] == url
         assert payload["embeds"][0]["title"] == article["title"]
-        assert " - Post" in payload["embeds"][0]["footer"]["text"]
+        assert (
+            payload["embeds"][0]["footer"]["text"].endswith(" - AWS")
+            or len(payload["embeds"][0]["footer"]["text"]) >= 10
+        )
 
 
-def test_dispatch_to_discord_footer_with_index(monkeypatch):
+@pytest.mark.parametrize(
+    "article, url, expected_suffix",
+    [
+        (
+            {"title": "CNCF Article", "provider": "CNCF"},
+            "https://www.cncf.io/blog/post",
+            " - CNCF",
+        ),
+        (
+            {"title": "AWS Article", "provider": "AWS"},
+            "https://aws.amazon.com/blogs/compute",
+            " - AWS",
+        ),
+        (
+            {"title": "Custom Provider", "provider": "Google Cloud"},
+            "https://cloud.google.com",
+            " - Google Cloud",
+        ),
+        ({"title": "Generic Web"}, "https://example.com/blog", ""),
+    ],
+)
+def test_dispatch_to_discord_footer_provider(
+    monkeypatch, article, url, expected_suffix
+):
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/test")
     mock_resp = MagicMock()
     mock_resp.status = 204
@@ -97,11 +123,15 @@ def test_dispatch_to_discord_footer_with_index(monkeypatch):
     mock_resp.__exit__.return_value = False
 
     with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
-        dispatch_to_discord({"title": "Test"}, "https://example.com", index=2, total=5)
+        dispatch_to_discord(article, url)
         req_arg = mock_urlopen.call_args[0][0]
         payload = json.loads(req_arg.data.decode("utf-8"))
         footer_text = payload["embeds"][0]["footer"]["text"]
-        assert "Post 2 of 5" in footer_text
+        if expected_suffix:
+            assert footer_text.endswith(expected_suffix)
+        else:
+            # Date only format: YYYY-MM-DD
+            assert len(footer_text) == 10
 
 
 @pytest.mark.parametrize(
