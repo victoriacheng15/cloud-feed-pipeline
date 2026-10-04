@@ -23,3 +23,14 @@ output "alerts_topic_arn" {
   value       = module.observability.alerts_topic_arn
 }
 
+output "ecs_cluster_name" {
+  description = "Name of the ECS cluster for on-demand task execution"
+  value       = module.extractor.cluster_name
+}
+
+output "ecs_task_definition_family" {
+  description = "Family of the ECS task definition"
+  value       = module.extractor.task_definition_family
+}
+
+

@@ -30,3 +30,10 @@ variable "config_bucket_name" {
 variable "config_bucket_arn" {
   type = string
 }
+
+variable "is_schedule_enabled" {
+  type        = bool
+  default     = true
+  description = "Controls whether the EventBridge extractor schedule rule is enabled"
+}
+

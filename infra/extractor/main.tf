@@ -184,7 +184,9 @@ resource "aws_cloudwatch_event_rule" "extractor_schedule" {
   name                = "${var.project_name}-schedule"
   description         = "Triggers extractor container on Tuesday and Thursday at 02:16 UTC"
   schedule_expression = "cron(16 2 ? * TUE,THU *)"
+  state               = var.is_schedule_enabled ? "ENABLED" : "DISABLED"
 }
+
 
 resource "aws_cloudwatch_event_target" "ecs_scheduled_target" {
   rule      = aws_cloudwatch_event_rule.extractor_schedule.name
