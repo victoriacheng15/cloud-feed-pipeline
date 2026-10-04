@@ -1,0 +1,6 @@
+aws_region          = "ca-central-1"
+environment         = "prod"
+vpc_id              = "vpc-xxxxxxxxxxxxxxxxx"
+public_subnet_ids   = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy", "subnet-zzzzzzzzzzzzzzzzz"]
+ecr_repository_url  = "123456789012.dkr.ecr.amazonaws.com/serverless-ingestion-engine"
+discord_webhook_url = "https://discord.com/api/webhooks/PROD_WEBHOOK_ID/PROD_WEBHOOK_TOKEN"
