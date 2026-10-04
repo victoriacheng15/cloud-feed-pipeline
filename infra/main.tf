@@ -48,7 +48,9 @@ module "extractor" {
   config_bucket_name  = module.storage.config_bucket_name
   config_bucket_arn   = module.storage.config_bucket_arn
   is_schedule_enabled = var.environment == "prod"
+  max_articles        = var.environment == "dev" ? "1" : ""
 }
+
 
 module "dispatcher" {
   source              = "./dispatcher"

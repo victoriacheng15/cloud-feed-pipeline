@@ -9,39 +9,54 @@ set -euo pipefail
 #
 # Prerequisite:
 #   OpenTofu registers the active ECS task definition with the container image:
-#   cd infra && tofu apply -var="ecr_repository_url=<account_id>.dkr.ecr.<region>.amazonaws.com/serverless-ingestion-engine"
-#   Once applied in AWS, this script runs on-demand without passing any variables.
+#   cd infra && tofu apply -var-file=environments/<env>.tfvars
+#   Once applied in AWS, this script runs on-demand for the target environment.
 #
 # Usage:
-#   ./scripts/trigger_ingestion.sh            # Live on-demand run & log stream
-#   ./scripts/trigger_ingestion.sh --dry-run  # Verify AWS resources without running
+#   ./scripts/trigger_ingestion.sh                      # Live on-demand run in dev (default)
+#   ./scripts/trigger_ingestion.sh --env dev            # Explicit dev execution & log stream
+#   ./scripts/trigger_ingestion.sh --env prod           # Live on-demand run in production
+#   ./scripts/trigger_ingestion.sh --env dev --dry-run  # Verify dev resources without running
+#   ./scripts/trigger_ingestion.sh --env prod --dry-run # Verify prod resources without running
 # ==============================================================================
 
+
 AWS_REGION="${AWS_REGION:-ca-central-1}"
-PROJECT_NAME="serverless-ingestion-engine"
-CLUSTER_NAME="${PROJECT_NAME}-cluster"
-TASK_DEF="${PROJECT_NAME}-extractor"
-SG_NAME="${PROJECT_NAME}-extractor-sg"
-LOG_GROUP="/ecs/${PROJECT_NAME}-extractor"
+PROJECT_NAME="${PROJECT_NAME:-serverless-ingestion-engine}"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
 DRY_RUN=false
 
 # Parse flags
-for arg in "$@"; do
-  case $arg in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env|-e)
+      ENVIRONMENT="$2"
+      shift 2
+      ;;
     --dry-run|-d)
       DRY_RUN=true
       shift
       ;;
     --help|-h)
-      echo "Usage: $0 [--dry-run|-d]"
+      echo "Usage: $0 [--env|-e dev|prod] [--dry-run|-d]"
       echo ""
       echo "Options:"
+      echo "  --env, -e       Target environment: dev or prod (default: dev)"
       echo "  --dry-run, -d   Validate AWS resources and configuration without launching ECS task"
       echo "  --help, -h      Show this help message"
       exit 0
       ;;
+    *)
+      shift
+      ;;
   esac
 done
+
+CLUSTER_NAME="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+TASK_DEF="${PROJECT_NAME}-${ENVIRONMENT}-extractor"
+SG_NAME="${PROJECT_NAME}-${ENVIRONMENT}-extractor-sg"
+LOG_GROUP="/ecs/${PROJECT_NAME}-${ENVIRONMENT}-extractor"
+
 
 echo "Resolving network configuration in AWS ${AWS_REGION}..."
 
