@@ -46,10 +46,12 @@ Infrastructure reliability standards are codified directly in OpenTofu (`infra/o
 ## Key Architectural Decisions
 
 - **Zero-NAT Gateway Cost Control:** The ECS extractor runs in public subnets with `assign_public_ip = true` and an egress-only security group (`ingress = []`). Drops unsolicited inbound traffic at the hypervisor while avoiding fixed hourly fees from idle NAT Gateways.
+- **Dual Cloud Environment Isolation:** Complete namespacing (`dev` vs `prod`) across ECS clusters, task definitions, SNS/SQS messaging, DynamoDB tables, and Discord webhook destinations with partitioned S3 OpenTofu state.
+- **Test Harness Engineering:** Real AWS Dev integration testing replaces offline mocks. Pull requests labeled `dev-test` trigger automated Fargate task execution and assert container exit status, DynamoDB deduplication insertion, zero DLQ messages, and live Discord embed delivery.
 - **Decoupled Buffer & Fan-Out:** SNS fan-out to SQS isolates the extractor from Discord rate limits. SQS provides a 180s visibility timeout (6x Lambda timeout) and a 3-retry threshold before quarantining poison pills in a 14-day DLQ.
 - **Distributed Idempotency:** Deterministic SHA-256 URL hashing with DynamoDB check-first validation prevents duplicate Discord notifications on SQS retries (`ReportBatchItemFailures` enabled).
 - **Hardened Container Profile:** Multi-stage Alpine container drops all Linux capabilities (`drop = ["ALL"]`) and mounts a read-only root filesystem as an unprivileged user (`extractoruser`, UID 10001).
-- **IaC Rigor & Security Scanning:** OpenTofu remote state is protected by DynamoDB distributed state locking. CI enforces parallel quality gates across Python linting/testing, Markdown validation, TFLint policy evaluation, Trivy security scanning, and nightly infrastructure drift detection.
+- **IaC Rigor & Security Scanning:** OpenTofu remote state is protected by DynamoDB distributed state locking. CI enforces quality gates across Python linting/testing, Markdown validation, TFLint policy evaluation, Trivy security scanning, and weekly infrastructure drift detection.
 
 ## Documentation
 
@@ -75,13 +77,22 @@ podman logs -f serverless-ingestion-engine-dispatcher
 make compose-down
 ```
 
-## Production Smoke Testing & Ad-Hoc Execution
+## Cloud Operations & Test Harness Execution
 
-Validate network boundaries and trigger on-demand extraction runs directly against AWS:
+Validate network boundaries and trigger on-demand extraction runs directly against AWS environments:
 
 ```bash
-./scripts/trigger_ingestion.sh --dry-run  # Verify VPC, subnets, and cluster without launching compute
-./scripts/trigger_ingestion.sh            # Trigger ephemeral Fargate run and stream live container logs
+# Validate AWS Dev VPC, subnets, and cluster without launching compute
+./scripts/trigger_ingestion.sh --env dev --dry-run
+
+# Run ephemeral Dev task and stream live container logs
+./scripts/trigger_ingestion.sh --env dev
+
+# Execute the automated cloud test harness against Dev
+uv run python scripts/verify_dev_pipeline.py --environment dev --region ca-central-1
+
+# Validate AWS Prod infrastructure
+./scripts/trigger_ingestion.sh --env prod --dry-run
 ```
 
 ## Quality Verification & Linting

@@ -8,166 +8,41 @@ Technical architecture specification for the Serverless Ingestion Engine, detail
 
 The engine follows an asynchronous, event-driven decoupled architecture with codified observability:
 
-```text
-                  ┌───────────────────────────────┐
-                  │          EventBridge          │
-                  │   cron(16 2 ? * TUE,THU *)    │
-                  └──────────────┬────────────────┘
-                                 │
-                                 │ ecs:RunTask
-                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       ECS Fargate Task                          │
-│             (ca-central-1 Public Subnet, Egress-Only)           │
-│                                                                 │
-│   ┌───────────────┐     ┌────────────────┐     ┌────────────┐   │
-│   │ S3 feeds.json │ ──> │ Feed Extractor │ ──> │ SNS Client │   │
-│   │   Registry    │     │  (Concurrent)  │     │ (Publish)  │   │
-│   └───────────────┘     └────────────────┘     └─────┬──────┘   │
-└───────────────────────────────┬──────────────────────┼──────────┘
-                                │                      │
-                exitCode != 0   │                      │ Publish article JSON
-               (EventBridge)    │                      ▼
-                                │         ┌────────────────────────┐
-                                │         │       SNS Topic        │
-                                │         │     (Feed Events)      │
-                                │         └────────────┬───────────┘
-                                │                      │
-                                │                      │ Fan-Out Subscription
-                                │                      ▼
-                                │         ┌────────────────────────┐
-                                │         │       SQS Queue        │
-                                │         │    (Pipeline Queue)    │
-                                │         └────┬──────────────┬────┘
-                                │              │              │
-     Batches of up to 10 items  │              │              │ 3 failed retries
-  with ReportBatchItemFailures  │              │              ▼
-                                │              │     ┌─────────────────┐
-                                │              │     │  Dead-Letter Q  │
-                                │              │     │ (14-d retention)│
-                                │              │     └────────┬────────┘
-                                │              │              │
-                                │              ▼              │ DLQ > 0
-┌───────────────────────────────┼─────────────────────────────┼───┐
-│                               │ Lambda Dispatcher           │   │
-│                               │ (Python 3.12, 30s timeout)  │   │
-│                               ▼                             ▼   │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │ For each SQS message:                                   │   │
-│   │                                                         │   │
-│   │ 1. Compute SHA-256 hash of article URL                  │   │
-│   │ 2. DynamoDB GetItem(article_hash)                       │   │
-│   │    ├── Exists: Discard (duplicate, return success)      │   │
-│   │    └── New: Format rich notification payload            │   │
-│   │ 3. HTTP POST to Webhook Endpoint                        │   │
-│   │    ├── Success (2xx/204): DynamoDB PutItem(article_hash)│   │
-│   │    └── Failure (4xx/5xx): ReportBatchItemFailures       │   │
-│   └───────────────────────────┬─────────────────────────────┘   │
-└───────────────────────┬───────┼─────────────────┬───────────────┘
-                        │       │ Errors > 0      │
-     Check / Commit     │       │ p99 > 45s       │
-  ┌─────────────────────┴─────┐ │                 ▼ Deliver Payload
-  │      DynamoDB Table       │ │      ┌─────────────────────────┐
-  │   (Deduplication Store)   │ │      │   Discord Webhook API   │
-  └───────────────────────────┘ │      │   (Rich Embed Post)     │
-                                │      └─────────────────────────┘
-                                ▼
-            ┌────────────────────────────────────────┐
-            │   CloudWatch Alarms & EventBridge      │
-            │   (Codified SLI / SLO Monitoring)      │
-            └───────────────────┬────────────────────┘
-                                │ Trigger Notification
-                                ▼
-            ┌────────────────────────────────────────┐
-            │         SNS Ops Alerts Topic           │
-            │         (Email / PagerDuty)            │
-            └────────────────────────────────────────┘
-```
+![Serverless Ingestion Engine Architecture](../architecture.png)
 
 ---
 
 ## 2. Ingestion & Extractor Subsystem
 
-### Ephemeral Execution Model
+The extractor runs as an ephemeral ECS Fargate container on Alpine Linux (51.7 MB compressed) with a read-only root filesystem:
 
-The extractor parses multiple RSS feeds concurrently. Instead of maintaining a persistent server or using Lambda (which risks execution timeouts on slow upstream feed hosts), the service runs as an on-demand ECS Fargate container:
-
-- **Scheduler & On-Demand Execution:** EventBridge invokes the task on Tuesdays and Thursdays at 02:16 UTC, with manual ad-hoc runs and pre-flight network validation supported via `scripts/trigger_ingestion.sh`.
-- **Feed Registry:** The task reads `feeds.json` from the S3 configuration bucket using the task IAM role.
-- **Concurrent Ingestion:** Feeds parse concurrently with per-host timeout boundaries to isolate slow or unresponsive servers.
-- **Container Footprint:** Built on Alpine Linux (51.7 MB compressed) with read-only root filesystems and dropped Linux kernel capabilities.
+- **Scheduled Trigger:** EventBridge invokes the task twice weekly in Production (Tuesdays and Thursdays at 02:16 UTC).
+- **Feed Registry:** Reads `feeds.json` directly from the S3 configuration bucket.
+- **Concurrency:** Ingests feeds concurrently with per-host timeouts to isolate slow upstream hosts.
 
 ### Zero-NAT Gateway Egress Topology
 
-Running ECS containers in private subnets typically requires an AWS NAT Gateway, which incurs fixed hourly fees even when idle. To avoid this cost while securing the network perimeter:
+To avoid AWS NAT Gateway fixed hourly charges while securing the network:
 
-```text
-                      INTERNET
-                         │
-                         ▼
-        ┌──────────────────────────────────┐
-        │       AWS VPC Public Subnet      │
-        │                                  │
-        │   ┌──────────────────────────┐   │
-        │   │    ECS Fargate ENI       │   │
-        │   │  (Ephemeral Public IP)   │   │
-        │   │                          │   │
-        │   │  Security Group Rules:   │   │
-        │   │  - Ingress: NONE []      │   │ <── Drops all unsolicited
-        │   │  - Egress: 80, 443, 53   │   │     inbound packets at
-        │   └─────────────┬────────────┘   │     hypervisor layer
-        │                 │                │
-        └─────────────────┼────────────────┘
-                          │
-                          │ Outbound HTTPS (443) / DNS (53) only
-                          ▼
-            [RSS Feeds / ECR / AWS APIs]
-```
-
-1. **Ephemeral Public IP:** The task launches with `assign_public_ip = true`.
-2. **Egress-Only Security Group:** The security group defines zero inbound rules (`ingress = []`). The AWS hypervisor drops 100% of unsolicited inbound packets before reaching the container.
-3. **Stateful Connection Tracking:** AWS security groups track outbound requests statefully, allowing inbound response packets for outbound HTTPS (443) and DNS (53) traffic.
+- **Public Subnet Launch:** The ECS task launches with `assign_public_ip = true`.
+- **Egress-Only Security Group:** Ingress is completely empty (`ingress = []`). Unsolicited inbound traffic is dropped at the AWS hypervisor.
+- **Stateful Return Traffic:** Security groups track outbound connections statefully, allowing responses for outbound HTTPS (443) and DNS (53) calls.
 
 ---
 
 ## 3. Messaging, Buffering & Resilience
 
-### Asynchronous Fan-Out
+### Asynchronous Fan-Out & Buffering
 
-The extractor publishes individual article events to an SNS topic. This provides architectural decoupling:
+- **Decoupled Publishing:** Extractor publishes article events to SNS and exits immediately.
+- **Backpressure Absorption:** SQS standard queue absorbs ingestion bursts and downstream rate limits.
+- **Visibility Timeout:** Configured to 180s (6x the Lambda 30s timeout) to ensure in-flight batches have sufficient processing margin.
 
-- The extractor completes immediately after publishing without waiting for downstream processing.
-- Additional subscribers (such as archive storage or analytics) can attach to the topic without changes to the extractor.
+### Poison-Pill Quarantine (DLQ)
 
-### Backpressure & Queue Buffering
-
-The SNS topic delivers messages to an SQS queue:
-
-- **Dampening Spikes:** Feeds published simultaneously are buffered in SQS, preventing downstream Lambda invocations from exhausting concurrent execution limits or triggering Discord rate limits.
-- **Visibility Timeout:** Configured to 180 seconds, exactly 6x the Lambda 30-second timeout. This ensures in-flight batches have sufficient margin to complete without premature redelivery.
-
-### Poison-Pill Quarantine & DLQ Flow
-
-```text
-[Incoming SQS Message] ──> [Lambda Execution Attempt]
-                                    │
-                       ┌────────────┴────────────┐
-                       ▼                         ▼
-                  [Success]                  [Failure]
-                      │                          │
-                 (Delete msg)            (Increment ReceiveCount)
-                                                 │
-                                     ReceiveCount >= 3 ?
-                                    ┌────────────┴────────────┐
-                                    ▼                         ▼
-                                   [No]                     [Yes]
-                                    │                         │
-                             (Return to SQS)        (Move to DLQ, 14-day retention)
-```
-
-1. SQS tracks delivery attempts per message (`ApproximateReceiveCount`).
-2. If processing fails 3 consecutive times, SQS moves the message to the Dead-Letter Queue.
-3. The DLQ retains poisoned messages for 14 days, allowing manual inspection and replay without blocking healthy traffic.
+- **Retry Limit:** SQS tracks attempts per message (`ApproximateReceiveCount`).
+- **Dead-Letter Routing:** After 3 consecutive failed deliveries, messages move to the DLQ.
+- **Retention:** The DLQ retains quarantined messages for 14 days for inspection without blocking valid messages.
 
 ---
 
@@ -175,36 +50,7 @@ The SNS topic delivers messages to an SQS queue:
 
 ### Check-First Deduplication Pattern
 
-SQS provides at-least-once delivery guarantees, which can cause duplicate executions during retries or network partitions. The Lambda dispatcher guarantees exactly-once delivery semantics using a check-first pattern:
-
-```text
-[SQS Message Received]
-          │
-          ▼
-[Compute SHA-256 Hash of Canonical URL]
-          │
-          ▼
-[DynamoDB GetItem(article_hash)]
-          │
-     Hash Exists?
-    ┌─────┴─────┐
-    ▼           ▼
-  [Yes]        [No]
-    │           │
-(Discard)       ▼
-(Success)  [Format Discord Rich Embed]
-                │
-                ▼
-           [HTTP POST to Discord Webhook]
-                │
-           Status 2xx/204?
-          ┌─────┴─────┐
-          ▼           ▼
-        [Yes]        [No]
-          │           │
-[DynamoDB PutItem] [ReportBatchItemFailures]
-(Record Hash)      (Leave on SQS for retry)
-```
+SQS provides at-least-once delivery. The Lambda dispatcher guarantees idempotent delivery via a check-first pattern:
 
 1. **Deterministic Keying:** Each article URL is hashed with SHA-256 into a 64-character hexadecimal digest.
 2. **Pre-Dispatch Evaluation:** Lambda reads DynamoDB (`GetItem`) before contacting Discord. If the hash exists, the article is logged as a duplicate and dismissed.
@@ -233,5 +79,19 @@ Infrastructure is managed with OpenTofu in modular components:
 | `infra/dispatcher/` | Lambda Function, SQS Event Mapping, IAM Execution Role | Processing and delivery |
 | `infra/observability/` | CloudWatch Metric Alarms, EventBridge Rule, SNS Alert Topic | SLI/SLO monitoring and alerting |
 
-- **Remote Backend & State Locking:** Root `infra/main.tf` stores state remotely in an S3 backend in `ca-central-1` with DynamoDB distributed state locking to prevent concurrent deployment race conditions.
-- **CI/CD Integration:** Merges to `main` authenticate via AWS OIDC federation, publish container images to Amazon ECR, and execute `tofu apply -auto-approve` without long-lived credentials.
+- **Partitioned Backend:** Uses a partial S3 backend with DynamoDB locking. State keys are partitioned per environment (`state/dev/terraform.tfstate` and `state/prod/terraform.tfstate`).
+- **Dynamic Namespacing:** All resources use `local.namespaced_project_name` (`serverless-ingestion-engine-${var.environment}`) to prevent collisions.
+- **Schedule Toggling:** Cron scheduling is enabled only in Production (`is_schedule_enabled = var.environment == "prod"`).
+
+---
+
+## 6. Cloud Verification & Test Harness Engineering
+
+Integration testing runs against real AWS Dev infrastructure via `scripts/verify_dev_pipeline.py`, eliminating the fidelity gap of local emulation.
+
+Pull requests labeled `dev-test` deploy to Dev and assert four system invariants:
+
+1. **Container Exit Status:** Asserts that the Fargate extractor exits with return code 0.
+2. **End-to-End Pipeline Completion:** Asserts that parsed articles traverse ECS -> SNS -> SQS -> Lambda and commit records into DynamoDB within the 120-second deadline.
+3. **Zero Poison-Pill Quarantine:** Asserts that the Dead-Letter Queue contains zero failed messages.
+4. **Single-Article Dev Safeguard:** The extractor respects `MAX_ARTICLES=1` in `dev` to prevent channel flooding while verifying the Discord visual layout.
