@@ -4,6 +4,16 @@ variable "aws_region" {
   description = "Target AWS region"
 }
 
+variable "environment" {
+  type        = string
+  description = "Target deployment environment (dev or prod)"
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "The environment variable must be either 'dev' or 'prod'."
+  }
+}
+
 variable "project_name" {
   type        = string
   default     = "serverless-ingestion-engine"
