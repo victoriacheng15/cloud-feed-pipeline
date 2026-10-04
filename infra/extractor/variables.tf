@@ -37,3 +37,10 @@ variable "is_schedule_enabled" {
   description = "Controls whether the EventBridge extractor schedule rule is enabled"
 }
 
+variable "max_articles" {
+  type        = string
+  default     = ""
+  description = "Optional limit on articles published per run (useful in dev to send only 1 message)"
+}
+
+

@@ -150,6 +150,17 @@ def main():
             len(all_articles),
         )
 
+        max_articles_raw = os.environ.get("MAX_ARTICLES")
+        if max_articles_raw and max_articles_raw.isdigit():
+            max_limit = int(max_articles_raw)
+            if max_limit > 0 and len(all_articles) > max_limit:
+                logger.info(
+                    "Capping extracted articles from %d to %d via MAX_ARTICLES",
+                    len(all_articles),
+                    max_limit,
+                )
+                all_articles = all_articles[:max_limit]
+
         if SNS_TOPIC_ARN:
             endpoint_url = os.environ.get("AWS_ENDPOINT_URL")
             sns = (

@@ -124,8 +124,10 @@ resource "aws_ecs_task_definition" "extractor_task" {
     environment = [
       { name = "SNS_TOPIC_ARN", value = var.sns_topic_arn },
       { name = "CONFIG_BUCKET", value = var.config_bucket_name },
-      { name = "CONFIG_KEY", value = "feeds.json" }
+      { name = "CONFIG_KEY", value = "feeds.json" },
+      { name = "MAX_ARTICLES", value = var.max_articles }
     ]
+
     readonlyRootFilesystem = true
     linuxParameters = {
       capabilities = {

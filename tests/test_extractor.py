@@ -174,3 +174,40 @@ def test_process_feed(
         assert articles[0]["url"] == "https://example.com/blog/serverless-pipelines"
         assert articles[0]["feed"] == "Cloud Blog"
         assert articles[0]["provider"] == "CloudProvider"
+
+
+def test_main_caps_articles_with_max_articles(monkeypatch):
+    from src.extractor import main
+
+    monkeypatch.setenv("MAX_ARTICLES", "1")
+    monkeypatch.setattr(
+        "src.extractor.load_feeds",
+        lambda: [
+            {
+                "id": "test",
+                "name": "Test",
+                "url": "https://example.com",
+                "enabled": True,
+            }
+        ],
+    )
+    fake_articles = [
+        {"feed": "Test", "title": "Article 1", "url": "https://example.com/1"},
+        {"feed": "Test", "title": "Article 2", "url": "https://example.com/2"},
+    ]
+    monkeypatch.setattr("src.extractor.process_feed", lambda _: fake_articles)
+
+    mock_publish = MagicMock()
+    monkeypatch.setattr("src.extractor.publish_article", mock_publish)
+    monkeypatch.setattr("src.extractor.wait_for_topic", MagicMock())
+    monkeypatch.setattr(
+        "src.extractor.SNS_TOPIC_ARN",
+        "arn:aws:sns:ca-central-1:123456789012:test-topic",
+    )
+    monkeypatch.setattr("boto3.client", MagicMock())
+
+    main()
+    assert mock_publish.call_count == 1
+
+    call_article = mock_publish.call_args[0][1]
+    assert call_article["url"] == "https://example.com/1"
